@@ -53,13 +53,17 @@
 
   function leadSignature(payload) {
     payload = payload || {};
-    return [
-      normalizeText(payload.project_id),
-      normalizeText(payload.form_id || payload.tracking_lead_id),
-      normalizePhone(payload.phone || payload.full_phone || payload.number),
-      normalizeText(payload.email),
-      normalizeText(payload.name)
-    ].join('|');
+    var project = normalizeText(payload.project_id);
+    var phone = normalizePhone(payload.phone || payload.full_phone || payload.number);
+    var email = normalizeText(payload.email);
+    var number = normalizePhone(payload.number);
+    var name = normalizeText(payload.name);
+
+    // Primary dedupe key should mirror CRM behavior: one lead per project + phone/email window.
+    if (project && phone) return [project, 'phone', phone].join('|');
+    if (project && number) return [project, 'number', number].join('|');
+    if (project && email) return [project, 'email', email].join('|');
+    return [project, 'fallback', name, normalizeText(payload.form_id || payload.tracking_lead_id)].join('|');
   }
 
   function isDuplicateSignature(signature, now) {
@@ -146,7 +150,13 @@
     if (!payload || typeof payload !== 'object') return false;
     var projectId = projectForPayload(payload);
     if (!projectId) return false;
-    return Boolean(payload.number || payload.phone || payload.full_phone || payload.mobile || payload.mobile_number || payload.email || payload.name);
+    var hasPhone = Boolean(payload.number || payload.phone || payload.full_phone || payload.mobile || payload.mobile_number);
+    var hasIdentity = Boolean(payload.number || payload.email || payload.name);
+    var hasLeadMarker = Boolean(payload.form_id || payload.tracking_lead_id || payload.source_id);
+
+    // Ignore non-lead events that only contain a phone but no lead identity/markers.
+    if (hasPhone && !hasIdentity && !hasLeadMarker) return false;
+    return Boolean(hasPhone || payload.email || payload.name);
   }
 
   function enrich(payload) {
@@ -230,7 +240,10 @@
     if (typeof originalFetch === 'function') {
       window.fetch = function (input, init) {
         try {
-          if (init && Object.prototype.hasOwnProperty.call(init, 'body')) maybeForwardLead(init.body);
+          var url = '';
+          if (typeof input === 'string') url = input;
+          else if (input && typeof input.url === 'string') url = input.url;
+          if (url !== CONFIG.webhook && init && Object.prototype.hasOwnProperty.call(init, 'body')) maybeForwardLead(init.body);
         } catch (err) {
           console.warn('Lead bridge fetch hook error:', err);
         }
