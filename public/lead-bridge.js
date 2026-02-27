@@ -2,7 +2,7 @@
   if (window.__leadBridgePatched) return;
   window.__leadBridgePatched = true;
 
-  // Central config: update here once and all microsites using this script get5   it. 
+  // Central config: update here once and all microsites using this script get6   it. 
   var CONFIG = {
     webhook: 'https://script.google.com/macros/s/AKfycbxBnaaiaDKmtpikQGOz2_uqLNPYY2E4QuEE4WMLptAGhG9NLbG8gr94aoN6Or-mLjVB4g/exec',
     defaultProjectId: '',
