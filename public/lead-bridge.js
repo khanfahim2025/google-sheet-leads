@@ -14,11 +14,77 @@
   var SCRIPT_CONFIG = readScriptConfig();
 
   var SENT_CACHE = Object.create(null);
-  var SENT_TTL_MS = 15000;
+  var SENT_TTL_MS = 30 * 60 * 1000;
+  var SENT_STORAGE_KEY = '__leadBridgeSentCacheV1';
 
   function makeUuid() {
     if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
     return 'lead_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+  }
+
+  function readPersistentCache() {
+    try {
+      if (!window.localStorage) return {};
+      var raw = window.localStorage.getItem(SENT_STORAGE_KEY);
+      if (!raw) return {};
+      var parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function writePersistentCache(cache) {
+    try {
+      if (!window.localStorage) return;
+      window.localStorage.setItem(SENT_STORAGE_KEY, JSON.stringify(cache || {}));
+    } catch (err) {
+      // Ignore storage errors (quota/privacy modes).
+    }
+  }
+
+  function normalizePhone(value) {
+    return String(value || '').replace(/\D+/g, '');
+  }
+
+  function normalizeText(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function leadSignature(payload) {
+    payload = payload || {};
+    return [
+      normalizeText(payload.project_id),
+      normalizeText(payload.form_id || payload.tracking_lead_id),
+      normalizePhone(payload.phone || payload.full_phone || payload.number),
+      normalizeText(payload.email),
+      normalizeText(payload.name)
+    ].join('|');
+  }
+
+  function isDuplicateSignature(signature, now) {
+    var ts = SENT_CACHE[signature];
+    if (ts && now - ts < SENT_TTL_MS) return true;
+
+    var persistent = readPersistentCache();
+    var persistentTs = Number(persistent[signature] || 0);
+    if (persistentTs && now - persistentTs < SENT_TTL_MS) {
+      SENT_CACHE[signature] = persistentTs;
+      return true;
+    }
+    return false;
+  }
+
+  function markSignatureSent(signature, now) {
+    SENT_CACHE[signature] = now;
+    var persistent = readPersistentCache();
+    var next = {};
+    Object.keys(persistent).forEach(function (key) {
+      var ts = Number(persistent[key] || 0);
+      if (ts && now - ts < SENT_TTL_MS) next[key] = ts;
+    });
+    next[signature] = now;
+    writePersistentCache(next);
   }
 
   function getBridgeScriptTag() {
@@ -120,10 +186,10 @@
   function sendToSheet(payload) {
     if (!CONFIG.webhook) return Promise.resolve(false);
     try {
-      var signature = [payload.project_id, payload.form_id, payload.phone, payload.email, payload.name].join('|');
+      var signature = leadSignature(payload);
       var now = Date.now();
-      if (SENT_CACHE[signature] && now - SENT_CACHE[signature] < SENT_TTL_MS) return Promise.resolve(true);
-      SENT_CACHE[signature] = now;
+      if (isDuplicateSignature(signature, now)) return Promise.resolve(true);
+      markSignatureSent(signature, now);
 
       var body = new URLSearchParams(payload).toString();
       if (navigator.sendBeacon) {
