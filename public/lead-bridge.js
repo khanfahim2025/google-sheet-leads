@@ -7,7 +7,7 @@
     webhook: 'https://script.google.com/macros/s/AKfycbxBnaaiaDKmtpikQGOz2_uqLNPYY2E4QuEE4WMLptAGhG9NLbG8gr94aoN6Or-mLjVB4g/exec',
     defaultProjectId: '',
     projectByHost: {
-      '127.0.0.1:5507': '6110'
+      
     },
     siteNameByHost: {}
   };
