@@ -279,6 +279,20 @@
     };
   }
 
-  patchSendLead();
+  function installSendLeadFallback() {
+    if (typeof window.SendLead === 'function') {
+      patchSendLead();
+      return;
+    }
+
+    // No api.js: expose a compatible direct-to-Excel fallback.
+    window.SendLead = function (payload) {
+      return sendToSheet(enrich(payload)).then(function () {
+        return 1;
+      });
+    };
+  }
+
+  installSendLeadFallback();
   installNetworkHooks();
 })();
