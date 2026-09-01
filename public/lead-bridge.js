@@ -233,35 +233,9 @@
   }
 
   function installNetworkHooks() {
-    if (window.__leadHubNetworkHooked) return;
-    window.__leadHubNetworkHooked = true;
-
-    var originalFetch = window.fetch;
-    if (typeof originalFetch === 'function') {
-      window.fetch = function (input, init) {
-        try {
-          var url = '';
-          if (typeof input === 'string') url = input;
-          else if (input && typeof input.url === 'string') url = input.url;
-          if (url !== CONFIG.webhook && init && Object.prototype.hasOwnProperty.call(init, 'body')) maybeForwardLead(init.body);
-        } catch (err) {
-          console.warn('Lead bridge fetch hook error:', err);
-        }
-        return originalFetch.apply(this, arguments);
-      };
-    }
-
-    if (typeof XMLHttpRequest !== 'undefined') {
-      var originalSend = XMLHttpRequest.prototype.send;
-      XMLHttpRequest.prototype.send = function (body) {
-        try {
-          maybeForwardLead(body);
-        } catch (err) {
-          console.warn('Lead bridge xhr hook error:', err);
-        }
-        return originalSend.call(this, body);
-      };
-    }
+    // Disabled — was intercepting the CRM fetch() call and firing Sheet
+    // at the same time CRM started (before CRM had a response).
+    // patchSendLead above now fires Sheet correctly after CRM finishes.
   }
 
   function patchSendLead() {
@@ -273,19 +247,19 @@
     window.SendLead = function () {
       var payload = arguments[0] || {};
       var thankyou = arguments[1];
-      try {
-        maybeForwardLead(payload);
-      } catch (err) {
-        console.warn('Lead bridge SendLead hook error:', err);
-      }
 
       try {
         var result = original.apply(this, arguments);
 
         if (result && typeof result.then === 'function') {
           return result
+            .then(function (crmResult) {
+              try { maybeForwardLead(payload); } catch (e) { console.warn('Sheet error:', e); }
+              return crmResult;
+            })
             .catch(function (err) {
               console.warn('CRM SendLead failed:', err);
+              try { maybeForwardLead(payload); } catch (e) { console.warn('Sheet error:', e); }
               return null;
             })
             .finally(function () {
@@ -293,10 +267,12 @@
             });
         }
 
+        try { maybeForwardLead(payload); } catch (e) { console.warn('Sheet error:', e); }
         redirectToThankYou(thankyou);
         return result;
       } catch (err) {
         console.warn('CRM SendLead threw error:', err);
+        try { maybeForwardLead(payload); } catch (e) { console.warn('Sheet error:', e); }
         redirectToThankYou(thankyou);
         return null;
       }
